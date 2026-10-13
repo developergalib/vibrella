@@ -1,0 +1,22 @@
+'use client';
+import { useEffect, useMemo, useState } from 'react';
+import type { Order, Product } from '../../../../lib/types';
+import { formatBDT } from '../../../../lib/format';
+import { orderProfit, orderProductCost, orderHasMissingCost, perProductProfit, downloadCsv, toCsv } from '../../../../lib/finance';
+export default function ProfitPage() {
+  const [orders, setOrders] = useState<Order[]>([]); const [products, setProducts] = useState<Product[]>([]);
+  useEffect(() => { fetch('/api/orders').then((r) => r.json()).then(setOrders); fetch('/api/products').then((r) => r.json()).then(setProducts); }, []);
+  const perProduct = useMemo(() => perProductProfit(orders, products), [orders, products]);
+  const totalProfit = useMemo(() => orders.reduce((s, o) => s + orderProfit(o, products), 0), [orders, products]);
+  function exportCsv() {
+    const rows = orders.map((o) => [o.id, new Date(o.createdAt).toLocaleDateString(), o.customerName, o.status, o.total, orderProductCost(o, products), o.packagingCost ?? 0, o.deliveryCost ?? o.deliveryFee ?? 0, o.paymentFee ?? 0, o.discount ?? 0, orderProfit(o, products)]);
+    downloadCsv('vibrella-profit-report.csv', toCsv(['Order', 'Date', 'Customer', 'Status', 'Total (BDT)', 'ProductCost (BDT)', 'Packaging (BDT)', 'DeliveryCost (BDT)', 'PaymentFee (BDT)', 'Discount (BDT)', 'Profit (BDT)'], rows));
+  }
+  return (<div className="max-w-7xl mx-auto px-4 py-8"><div className="flex justify-between flex-wrap gap-2"><h1 className="text-2xl font-bold">Profit Calculator</h1><div className="flex gap-2"><a href="/admin/finance" className="underline text-sm self-center">← Finance</a><button className="btn-ghost" onClick={exportCsv}>Download CSV</button></div></div>
+    <div className="card p-5 mt-6"><p className="font-bold">Formula</p><p className="text-sm mt-1">Profit = Selling total − Product costs (buying cost × qty) − Packaging − Delivery cost − Payment fee − Coupon discount</p><p className="text-xs text-stone-500 mt-1">Cancelled / Returned orders count as ৳0 profit. If a product has no buying cost set, its cost is treated as ৳0 and flagged “cost not set” — set it in Products for accurate profit.</p><p className="text-2xl font-bold mt-3">Total order profit: <span className={totalProfit < 0 ? 'text-red-600' : 'text-green-700'}>{formatBDT(totalProfit)}</span> <span className="text-sm font-normal text-stone-500">(before manual expenses — see Finance Overview for net profit)</span></p></div>
+    <h2 className="text-xl font-bold mt-8">Per-Product Profit</h2>
+    <div className="card mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="p-3">Product</th><th className="p-3">Units Sold</th><th className="p-3">Revenue</th><th className="p-3">Cost</th><th className="p-3">Profit</th><th className="p-3">Margin</th></tr></thead><tbody>{perProduct.map((r) => (<tr key={r.product.id} className="border-b"><td className="p-3 font-semibold">{r.product.name}<br />{!r.costSet && <span className="text-xs text-amber-700">⚠ cost not set</span>}</td><td className="p-3">{r.unitsSold}</td><td className="p-3">{formatBDT(r.revenue)}</td><td className="p-3">{formatBDT(r.cost)}</td><td className="p-3 font-semibold">{formatBDT(r.profit)}</td><td className="p-3">{r.marginPct.toFixed(1)}%</td></tr>))}</tbody></table></div>
+    <h2 className="text-xl font-bold mt-8">Per-Order Profit</h2>
+    <div className="card mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="p-3">Order</th><th className="p-3">Total</th><th className="p-3">Product Cost</th><th className="p-3">Pack. + Delivery + Fee</th><th className="p-3">Discount</th><th className="p-3">Profit</th></tr></thead><tbody>{orders.map((o) => (<tr key={o.id} className="border-b"><td className="p-3 font-semibold">{o.id}<br /><span className="text-xs text-stone-500">{o.status}{orderHasMissingCost(o, products) && ' • cost not set'}</span></td><td className="p-3">{formatBDT(o.total)}</td><td className="p-3">{formatBDT(orderProductCost(o, products))}</td><td className="p-3">{formatBDT((o.packagingCost ?? 0) + (o.deliveryCost ?? o.deliveryFee ?? 0) + (o.paymentFee ?? 0))}</td><td className="p-3">{formatBDT(o.discount ?? 0)}</td><td className="p-3 font-semibold">{formatBDT(orderProfit(o, products))}</td></tr>))}</tbody></table>{orders.length === 0 && <p className="p-4 text-stone-500">No orders yet.</p>}</div>
+  </div>);
+}
